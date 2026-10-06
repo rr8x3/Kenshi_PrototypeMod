@@ -25,7 +25,6 @@
 #include <kenshi/CharMovement.h>
 #include <kenshi/PhysicsActual.h>
 #include <kenshi/util/UtilityT.h>
-//#include <kenshi/AI/AI.h>
 #include <kenshi/AI/AITaskSystem.h>
 #include <ogre/OgreEntity.h>
 #include <ogre/OgreSceneNode.h>
@@ -39,7 +38,7 @@
 #include <kenshi/gui/ForgottenGUI.h>
 #include <kenshi/gui/DatapanelGUI.h>
 #include <kenshi/gui/DataPanelLine.h>
-#include <kenshi/gui/InventoryGUI.h>>
+#include <kenshi/gui/InventoryGUI.h>
 #include <mygui/common/baselayout/BaseLayout.h>
 #include <core/Functions.h>
 #include <kenshi/Building/UseableStuff.h>
@@ -59,7 +58,7 @@
 // I'm not sure how exactly to do it though, and this works fine. Would be way cleaner and theoretically work with all RaceData values, however.
 // UPDATE: I tried and managed to save protoRace's data and load it (I think) but couldn't figure out how to update the RaceData from it. I can't really find any documentation but maybe I'm just not smart enough for allat
 
-// Function adapted from Disarm's source code
+// Adapted from Disarm's source code
 static std::string GetSaveDataPath(const std::string& uid) {
     HMODULE hSelf = NULL;
     GetModuleHandleExA(
@@ -78,6 +77,8 @@ static std::string GetSaveDataPath(const std::string& uid) {
 
     return p.substr(0, slash + 1) + "SaveData\\" + uid + ".ini";
 }
+
+
 
 
 MyGUI::Window* mainWindow;
@@ -292,9 +293,9 @@ void createStatList() {
     statList.push_back(makeStatEntry("runSpeedMaxSkill", "Mastered Speed", -70.0f, 200.0f, 10.0f, protoRace->runSpeedMaxSkill, 15.0f, &RaceData::runSpeedMaxSkill));
     //statList.push_back(makeStatEntry("originalBloodMin", "Starting Blood", -70.0f, 200.0f, 10.0f, protoRace->originalBloodMin, 20.0f, &RaceData::originalBloodMin)); // Not sure if I should keep this
     statList.push_back(makeStatEntry("originalBloodMax", "Max Potential Blood", -70.0f, 200.0f, 10.0f, protoRace->originalBloodMax, 10.0f, &RaceData::originalBloodMax));
-    statList.push_back(makeStatEntry("healRate", "Heal Rate", -70.0f, 200.0f, 5.0f, protoRace->healRate, 20.0f, &RaceData::healRate)); // Base set in FCS is 1.0, might be too harsh. Costs 400 points to get to normal skeleton base
+    statList.push_back(makeStatEntry("healRate", "Heal Rate", -70.0f, 200.0f, 5.0f, protoRace->healRate, 20.0f, &RaceData::healRate)); // Base in FCS is 1.0, might be too harsh. Costs 400 points to get to normal skeleton base
     //                                                                                                                                    Maybe set to 15 price? or 10 step 30 price
-    StatEntry bleedRate = makeStatEntry("bleedRate", "Bleed Rate Reduction", -200.0f, 95.0f, 5.0f, protoRace->bleedRate, 10.0f, &RaceData::bleedRate); // Base set in FCS is 1.0
+    StatEntry bleedRate = makeStatEntry("bleedRate", "Bleed Rate Reduction", -200.0f, 95.0f, 5.0f, protoRace->bleedRate, 10.0f, &RaceData::bleedRate); // Base in FCS is 1.0
     bleedRate.reversed = true;
     statList.push_back(bleedRate);
     statList.push_back(makeStatEntry("swimSpeed", "Swim Speed", -80.0f, 200.0f, 20.0f, protoRace->swimSpeed, 10.0f, &RaceData::swimSpeed)); // make cheap, might remove
@@ -829,7 +830,10 @@ void saveAllPrototypeHealth(std::ofstream& file) {
 
     for (size_t i = 0; i < allCharacters.size(); i++) {
         Character* c = allCharacters[i];
-        if (c->getRace() != protoRace) { DebugLog("Not prototype didn't save"); continue; }
+        if (c->getRace() != protoRace) { 
+            //DebugLog("Not prototype didn't save"); 
+            continue;
+        }
 
         int charID = c->data->id;
         if (charID == NULL) { DebugLog("No id didn't save"); continue; }
@@ -1101,7 +1105,7 @@ void loadFromSerialise_hook(PlayerInterface* thisptr, GameData* data)
     }
 
     LoadCustomization(currentDataID);
-    tryingLoad = true; // Starts a check in world loop hook
+    tryingLoad = true; // Starts a check in main world loop hook
 
 
     
@@ -1264,7 +1268,8 @@ void doExtractSequence() {
         return; 
     }
     else { 
-        extractBar->setProgressPosition(floor(((timeOfDay.getMinutesPassed() - now) * 32) + 0.5));
+        // Increased bar range and multiplied this to make it smoother, not very clean though, should automate it
+        extractBar->setProgressPosition(floor(((timeOfDay.getMinutesPassed() - now) * 32) + 0.5)); // Used floor(... + 0.5) because the 2010 toolset doesn't seem to have a normal way to round
         
     }
     
