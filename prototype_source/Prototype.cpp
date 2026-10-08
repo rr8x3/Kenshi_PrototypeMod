@@ -100,7 +100,13 @@ MedicalSystem::HealthPartStatus* extractTargetHead;
 float percentHeadDamage = 0.8;
 float extractRadius = 12;
 MyGUI::ProgressBar* extractBar = NULL;
+std::string extractorName = "Data Extractor";
 //______________________________
+
+//      Cache globals
+std::string cacheName = "Data Cache";
+int rewardMin = 25;
+int rewardMax = 50;
 
 
 static ContextMenu* g_activeMenu = NULL;
@@ -1119,30 +1125,6 @@ void tryingLoadLoop() {
     }
 }
 
-
-
-void (*_doActions_orig)(Dialogue* thisptr, DialogLineData* dialogLine);
-void _doActions_hook(Dialogue* thisptr, DialogLineData* dialogLine)
-{
-
-    _doActions_orig(thisptr, dialogLine);
-    // Added a custom "action" (more like a flag that doesn't do anything) to the fcs using FCS Extended and added a dialogue option that has it to the Black Desert City robotics vendor.
-    // On the code end here, this checks if a dialogue has the "action" by searching for its name
-    ogre_unordered_map<std::string, Ogre::vector<GameDataReference>::type>::type::iterator iter = dialogLine->getGameData()->objectReferences.find("open prototype menu");
-    // If it does, the edit window is created:
-    if (iter != dialogLine->getGameData()->objectReferences.end())
-        createWindowBase("stats");
-
-    ogre_unordered_map<std::string, Ogre::vector<GameDataReference>::type>::type::iterator iter2 = dialogLine->getGameData()->objectReferences.find("open health menu");
-
-    if (iter2 != dialogLine->getGameData()->objectReferences.end()) {
-        Character* speaker = ou->player->selectedCharacter.getCharacter();
-
-        createHealthList(speaker->getMedical());
-        createWindowBase("health");
-    }
-}
-
 MyGUI::ProgressBar* createExtractBar() {
 
     if (extractBar != NULL) {
@@ -1167,7 +1149,7 @@ MyGUI::ProgressBar* createExtractBar() {
 
 
 
-Item* findExtractorIfHas(Character* character) {
+Item* findItemIfHas(Character* character, std::string item) {
 
     Inventory* charInv = character->getInventory();
 
@@ -1175,7 +1157,7 @@ Item* findExtractorIfHas(Character* character) {
     lektor<InventorySection*> mainInv = charInv->getAllSections();
 
     for (size_t i = 0; i < mainInv.size(); i++) {
-        mainInv[i]->getAllItemsOfName(foundItems, "Data Extractor");
+        mainInv[i]->getAllItemsOfName(foundItems, item);
         if (foundItems.size() > 0) { return foundItems[0]; }
     }
 
@@ -1186,7 +1168,7 @@ Item* findExtractorIfHas(Character* character) {
             lektor<InventorySection*> bpSecs = bpInv->getAllSections();
 
             for (size_t i = 0; i < bpSecs.size(); i++) {
-                bpSecs[i]->getAllItemsOfName(foundItems, "Data Extractor");
+                bpSecs[i]->getAllItemsOfName(foundItems, item);
                 if (foundItems.size() > 0) { return foundItems[0]; }
             }
         }
@@ -1198,8 +1180,28 @@ Item* findExtractorIfHas(Character* character) {
 
 }
 
+bool findAndRemoveItem(Character* holder, Item* item, int amount) {
+    
+    if (holder->getInventory()->removeItemAutoDestroy(item, amount)) { 
+        return true;
+    }
+    else if (holder->hasABackpackOn()->inventory->removeItemAutoDestroy(item, amount)) {
+        return true;
+    }
+    return false;
+}
 
-ScreenLabel* extractedPointsLabel;
+
+ScreenLabel* newLabel;
+
+void newLabelTracking(Character* trackedChar, std::string text) {
+
+    newLabel = gui->createScreenLabel(text, MyGUI::Colour(0, 1, 0, 1), ScreenLabel::LS_SMALL, ScreenLabel::RS_SLOW);
+    newLabel->setTracking(trackedChar->handle, Ogre::Vector3(0, 0, 0));
+    newLabel->setVisible(true);
+
+
+}
 
 void awardPoints() {
 
@@ -1216,9 +1218,7 @@ void awardPoints() {
     std::stringstream rewardText;
     rewardText << "+" << reward << " points! " << "(" << currentPoints << ")";
 
-    extractedPointsLabel = gui->createScreenLabel(rewardText.str(), MyGUI::Colour(0, 1, 0, 1), ScreenLabel::LS_SMALL, ScreenLabel::RS_SLOW);
-    extractedPointsLabel->setTracking(extractActor->handle, Ogre::Vector3(0, 0, 0));
-    extractedPointsLabel->setVisible(true);
+    newLabelTracking(extractActor, rewardText.str());
 }
 
 void endExtraction() {
@@ -1234,7 +1234,7 @@ void doExtractSequence() {
     
     if (!g_extractTarget->isDead() && !g_extractTarget->isLiterallyUnconciousNotPretending()) { endExtraction(); return; }
     
-    if (findExtractorIfHas(extractActor) == NULL) { endExtraction(); return; }
+    if (findItemIfHas(extractActor, extractorName) == NULL) { endExtraction(); return; }
 
     // Prevents running away while extracting by carrying target while still enabling carrying if standing still
     // Small grace period just in case it accidentally gets triggered while coming to a stop
@@ -1249,13 +1249,12 @@ void doExtractSequence() {
 
 
 
-        Item* extractor = findExtractorIfHas(extractActor);
+        Item* extractor = findItemIfHas(extractActor, extractorName);
         if (extractor != NULL) {
             extractor->chargesLeft -= 1;
             if (extractor->chargesLeft < 1) { 
-                // Extractor isn't null, so if it doesn't get destroyed from inventory, it must be in backpack
                 // I tried destroying it from extractor->getInventory to simplify things but it caused crashes
-                if (!extractActor->getInventory()->removeItemAutoDestroy(extractor, 1)) { extractActor->hasABackpackOn()->inventory->removeItemAutoDestroy(extractor, 1); }
+                if (!findAndRemoveItem(extractActor, extractor, 1)) { extractor = NULL; endExtraction(); return; }
                 extractor = NULL; 
             }
         }
@@ -1286,7 +1285,7 @@ void onExtractClicked(MyGUI::WidgetPtr sender) {
         if (extractActor == NULL) extractActor = ou->player->getAnyPlayerCharacter();
     }
 
-    if (findExtractorIfHas(extractActor) == NULL) { return; }
+    if (findItemIfHas(extractActor, extractorName) == NULL) { return; }
 
     Character* target = g_extractTarget;
     extractTargetHead = target->getMedical()->getPart(MedicalSystem::HealthPartStatus::PartType::PART_HEAD, LeftRight::SIDE_NEITHER);
@@ -1352,7 +1351,7 @@ void ContextMenu_show_hook(ContextMenu* thisptr, bool on, RootObject* what)
     Character* target = NULL;
     Character* actor = ou->player->selectedCharacter.getCharacter();
     
-    if (findExtractorIfHas(actor) == NULL) { return; }
+    if (findItemIfHas(actor, extractorName) == NULL) { return; }
 
     for (int i = 0; i < 2; ++i) {
         ContextMenuGUI* c = candidates[i];
@@ -1495,6 +1494,25 @@ void ContextMenu_show_hook(ContextMenu* thisptr, bool on, RootObject* what)
     g_extractRowActive = true;
 }
 
+void openDataCache(Character* holder, Item* cache) {
+
+    if (!findAndRemoveItem(holder, cache, 1)) { return; }
+
+    int newReward = UtilityT::randomInt(rewardMin, rewardMax);
+    currentPoints += newReward;
+    std::stringstream rewardText;
+    rewardText << "+" << newReward << " points! " << "(" << currentPoints << ")";
+
+    DebugLog("CACHE: " + rewardText.str());
+
+    newLabelTracking(holder, rewardText.str());
+
+}
+
+
+
+
+
 void (*GameWorld_mainLoop_orig)(GameWorld*, float);
 
 void GameWorld_mainLoop_hook(GameWorld* thisptr, float time)
@@ -1509,6 +1527,41 @@ void GameWorld_mainLoop_hook(GameWorld* thisptr, float time)
 
     travelingToTargetSequence();
     initiateExtraction();
+}
+
+void (*_doActions_orig)(Dialogue* thisptr, DialogLineData* dialogLine);
+void _doActions_hook(Dialogue* thisptr, DialogLineData* dialogLine)
+{
+
+    _doActions_orig(thisptr, dialogLine);
+    // Added a custom "action" (more like a flag that doesn't do anything) to the fcs using FCS Extended and added a dialogue option that has it to the Black Desert City robotics vendor.
+    // On the code end here, this checks if a dialogue has the "action" by searching for its name
+    ogre_unordered_map<std::string, Ogre::vector<GameDataReference>::type>::type::iterator iter = dialogLine->getGameData()->objectReferences.find("open prototype menu");
+    // If it does, the edit window is created:
+    if (iter != dialogLine->getGameData()->objectReferences.end()) {
+        createWindowBase("stats");
+        return;
+    }
+    ogre_unordered_map<std::string, Ogre::vector<GameDataReference>::type>::type::iterator iter2 = dialogLine->getGameData()->objectReferences.find("open health menu");
+
+    if (iter2 != dialogLine->getGameData()->objectReferences.end()) {
+        Character* speaker = ou->player->selectedCharacter.getCharacter();
+
+        createHealthList(speaker->getMedical());
+        createWindowBase("health");
+    }
+
+    ogre_unordered_map<std::string, Ogre::vector<GameDataReference>::type>::type::iterator iter3 = dialogLine->getGameData()->objectReferences.find("open data cache");
+
+    if (iter3 != dialogLine->getGameData()->objectReferences.end()) {
+        Character* speaker = ou->player->selectedCharacter.getCharacter();
+        Item* dataCache = findItemIfHas(speaker, "Data Cache");
+        if (dataCache != NULL) {
+            openDataCache(speaker, dataCache);
+        }
+        return;
+
+    }
 }
 
 

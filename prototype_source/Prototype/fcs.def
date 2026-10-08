@@ -1,3 +1,4 @@
 [DIALOGUE,DIALOGUE_LINE,WORD_SWAPS]
 open prototype menu:            ITEM (0) "action: open prototype's customization menu"
 open health menu:            ITEM (0) "action: open prototype's health modification menu"
+open data cache:            ITEM (0) "action: take data cache and provide points"
