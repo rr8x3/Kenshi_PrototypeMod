@@ -98,7 +98,7 @@ CharMovement* actorMovement;
 double travelStartTime = 0.0;
 MedicalSystem::HealthPartStatus* extractTargetHead;
 float percentHeadDamage = 0.8;
-float extractRadius = 12;
+float extractRadius = 22;
 MyGUI::ProgressBar* extractBar = NULL;
 std::string extractorName = "Data Extractor";
 //______________________________
@@ -134,7 +134,7 @@ public:
 // Core globals
 RaceData* protoRace = RaceData::getRaceData("10-custom_skeletons.mod"); // StringIDs for lookup are in the FCS
 GameData* protoData = protoRace->data;
-RaceData* skeletonRace = RaceData::getRaceData("17946-stick_people.mod");
+RaceData* skeletonRace = RaceData::getRaceData("17946-stick_people.mod"); // For checking if character is a skeleton by using isRelatedRace() on this
 
 float currentPoints = 40.0f;
 MyGUI::TextBox* pointsDisplay;
@@ -293,6 +293,7 @@ HealthEntry makeHealthPartEntry(std::string key, std::string label, float min, f
 }
 
 void createStatList() {
+    if (!statList.empty()) { statList.clear(); }
     //TEMPLATE: statList.push_back(makeStatEntry("", "", -70.0f, 200.0f, 10.0f, protoRace->, 0.0f, &RaceData::));
 
     //statList.push_back(makeStatEntry("runSpeedMinSkill", "Starting Speed", -70.0f, 200.0f, 10.0f, protoRace->runSpeedMinSkill, 20.0f, &RaceData::runSpeedMinSkill)); // Not sure if I should keep this
@@ -309,6 +310,7 @@ void createStatList() {
 }
 
 void createBoolList() {
+    if (!boolList.empty()) { boolList.clear(); }
 
     BoolEntry noHats = makeBoolEntry("noHats", "Can Wear Hats", 40.0f, false, &RaceData::noHats);
     noHats.reversed = true;
@@ -350,6 +352,20 @@ std::vector<StatEntry> laborStats;
 
 void createStatModList() {
 
+    // This is the easiest way to clear them on the old toolset. My other functions normally check if list is empty first
+    // but it's hard to do cleanly for this many on this toolset and probably unnecessary anyway so I just avoided it
+
+    attributeStats.clear();
+    athleticStats.clear();
+    weaponStats.clear();
+    combatStats.clear();
+    rangedStats.clear();
+    precisionStats.clear();
+    stealthStats.clear();
+    scienceStats.clear();
+    smithingStats.clear();
+    laborStats.clear();
+    
     // --- WEAPONS ---
 
     std::vector<StatsEnumerated> weaponEnums;
@@ -446,8 +462,8 @@ void applyStatMod(std::vector<StatEntry> &stats) {
        
         std::vector<StatsEnumerated> &statEnums = stats[i].enums;
         std::stringstream debugEnum;
-        debugEnum << stats[i].enums.size();
-        DebugLog(stats[i].key + "ENUMS: " + debugEnum.str());
+        //debugEnum << stats[i].enums.size();
+        //DebugLog(stats[i].key + "ENUMS: " + debugEnum.str());
 
         for (size_t e = 0; e < statEnums.size(); e++) {
 
@@ -842,9 +858,9 @@ void saveAllPrototypeHealth(std::ofstream& file) {
         }
 
         int charID = c->data->id;
-        if (charID == NULL) { DebugLog("No id didn't save"); continue; }
+        if (charID == NULL) { ErrorLog("No id didn't save"); continue; }
         createHealthList(c->getMedical());
-        if (healthList.empty()) { DebugLog("No list didn't save"); continue; }
+        if (healthList.empty()) { ErrorLog("No list didn't save"); continue; }
 
         file << "[Character:" << charID << "]\n";
         for (size_t j = 0; j < healthList.size(); j++) {
@@ -1079,11 +1095,13 @@ void firstLoadProcedure() {
     createBoolList();
     createStatModList();
 
-    createWindowBase("stats");
+    
     gameStart = false;
     firstLoad = false;
 
-
+    if (gameStart) {
+        createWindowBase("stats");
+    }
 }
 
 void (*loadFromSerialise_orig)(PlayerInterface*, GameData*) = NULL;
@@ -1094,14 +1112,18 @@ void loadFromSerialise_hook(PlayerInterface* thisptr, GameData* data)
     // Setting these to default before load so they don't become dangling pointers and cause a crash
     extractActor = NULL;
     g_extractTarget = NULL;
-    travelingToTarget = false;
     playingExtractAnim = false;
+    travelingToTarget = false;
 
+    if (extractBar != NULL) {
+        gui->destroyWidget(extractBar);
+        extractBar = NULL;
+    }
     
 
     loadFromSerialise_orig(thisptr, data);
    
-
+    
     DebugLog(data->stringID);
     currentDataID = data->stringID;
     timeOfDay = ou->getTimeStamp_inGameHours(); // Seems like a weird way to get a TimeOfDay instance but it works I guess
@@ -1181,13 +1203,23 @@ Item* findItemIfHas(Character* character, std::string item) {
 }
 
 bool findAndRemoveItem(Character* holder, Item* item, int amount) {
-    
-    if (holder->getInventory()->removeItemAutoDestroy(item, amount)) { 
+    if (!holder || !item) {
+        return false;
+    }
+
+    Inventory* inventory = holder->getInventory();
+    if (inventory && inventory->hasItem(item)) {
+        inventory->removeItemAutoDestroy(item, amount);
         return true;
     }
-    else if (holder->hasABackpackOn()->inventory->removeItemAutoDestroy(item, amount)) {
+
+    ContainerItem* backpack = holder->hasABackpackOn();
+    if (backpack && backpack->inventory &&
+        backpack->inventory->hasItem(item)) {
+        backpack->inventory->removeItemAutoDestroy(item, amount);
         return true;
     }
+
     return false;
 }
 
@@ -1222,11 +1254,13 @@ void awardPoints() {
 }
 
 void endExtraction() {
-
     playingExtractAnim = false;
-    gui->destroyWidget(extractBar);
-    extractBar = NULL;
+    travelingToTarget = false;
 
+    if (extractBar != NULL) {
+        gui->destroyWidget(extractBar);
+        extractBar = NULL;
+    }
 }
 
 
@@ -1254,8 +1288,14 @@ void doExtractSequence() {
             extractor->chargesLeft -= 1;
             if (extractor->chargesLeft < 1) { 
                 // I tried destroying it from extractor->getInventory to simplify things but it caused crashes
-                if (!findAndRemoveItem(extractActor, extractor, 1)) { extractor = NULL; endExtraction(); return; }
+                if (!findAndRemoveItem(extractActor, extractor, 1)) {
+                    DebugLog("REMOVE FAILED");
+                    newLabelTracking(extractActor, "Extract Failed");
+                    extractor = NULL; 
+                    return; 
+                }
                 extractor = NULL; 
+                DebugLog("REMOVE SUCCESS");
             }
         }
         else { return; }
@@ -1306,7 +1346,7 @@ void onExtractClicked(MyGUI::WidgetPtr sender) {
 void travelingToTargetSequence() {
 
     if (travelingToTarget && extractActor != NULL && g_extractTarget != NULL) {
-        if (extractActor->getPosition().squaredDistance(g_extractTarget->getPosition()) <= extractRadius) {
+        if (extractActor->getPosition().squaredDistance(g_extractTarget->getPosition()) <= extractRadius - 4) {
             travelingToTarget = false;
             playingExtractAnim = true;
             now = timeOfDay.getMinutesPassed();
@@ -1385,7 +1425,7 @@ void ContextMenu_show_hook(ContextMenu* thisptr, bool on, RootObject* what)
             MyGUI::IntSize(gui->mMainWidget->getSize().width, correctH));
     }
 
-    if (!target->getRace()->isRelatedRace(skeletonRace)) { return; }
+    //if (!target->getRace()->isRelatedRace(skeletonRace)) { return; }
     if (!target->isDead() && !target->isLiterallyUnconciousNotPretending()) { return; }
     if (target->isAnimal() || target->isPlayerCharacter()) { return; }
     g_extractTarget = target;
@@ -1549,13 +1589,14 @@ void _doActions_hook(Dialogue* thisptr, DialogLineData* dialogLine)
 
         createHealthList(speaker->getMedical());
         createWindowBase("health");
+        return;
     }
 
     ogre_unordered_map<std::string, Ogre::vector<GameDataReference>::type>::type::iterator iter3 = dialogLine->getGameData()->objectReferences.find("open data cache");
 
     if (iter3 != dialogLine->getGameData()->objectReferences.end()) {
         Character* speaker = ou->player->selectedCharacter.getCharacter();
-        Item* dataCache = findItemIfHas(speaker, "Data Cache");
+        Item* dataCache = findItemIfHas(speaker, cacheName);
         if (dataCache != NULL) {
             openDataCache(speaker, dataCache);
         }
